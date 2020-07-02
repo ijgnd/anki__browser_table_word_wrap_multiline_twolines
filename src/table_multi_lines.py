@@ -1,5 +1,6 @@
 """
-copyright 2019 ijgnd
+copyright: 2019- ijgnd
+           2020- Lovac42 (toolbar.py)
 
 Use this at your own risk. Incomplete version.
 
@@ -23,14 +24,31 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from anki.hooks import addHook, wrap
 
+from aqt.gui_hooks import (
+    browser_menus_did_init,
+    browser_will_show,
+)
 from aqt import mw
-from aqt.browser import Browser, DataModel, StatusDelegate
+from aqt.browser import (
+    Browser,
+    DataModel,
+    StatusDelegate,
+)
 from anki.hooks import wrap
-from aqt.qt import *
+from aqt.qt import (
+    QKeySequence
+)
+
+
+from .toolbar import getMenu
 
 
 def gc(arg, fail=False):
-    return mw.addonManager.getConfig(__name__).get(arg, fail)
+    conf = mw.addonManager.getConfig(__name__)
+    if conf:
+        return conf.get(arg, fail)
+    else:
+        return fail
 
 
 #limit the lengh of what is shown in a table cell. Necessary 
@@ -49,12 +67,15 @@ def mypaint(self, painter, option, index):
 StatusDelegate.paint = wrap(StatusDelegate.paint, mypaint, "before")
 
 
-def additionalInit(self, mw):
+def additionalInit(self):
     global table_multilines
     table_multilines = False
     if gc("on by default"):
         table_multilines = True
-Browser.__init__ = wrap(Browser.__init__, additionalInit)
+    # revert https://github.com/ankitects/anki/commit/9ee82d55b11168b24f8c6b78efed735e2523bc66 
+    # from 2020-03-20
+    self.form.tableView.setWordWrap(True)
+browser_will_show.append(additionalInit)
 
 
 def toggle_tablelines(browser):
@@ -62,15 +83,12 @@ def toggle_tablelines(browser):
     table_multilines ^= True
 
 
-def onSetupMenus(self):
-    try:
-        m = self.menuView
-    except:
-        self.menuView = QMenu("&View")
-        action = self.menuBar().insertMenu(
-            self.mw.form.menuTools.menuAction(), self.menuView)
-        m = self.menuView
-    a = m.addAction('enable wordwrap in table (multi-line), close and reopen Browser to deactivate')
+def setupBrowserMenu(self):
+    # self is browser
+    view = getMenu(self, "&View")
+    a = view.addAction('enable wordwrap in table (multi-line), close and reopen Browser to deactivate')
     a.triggered.connect(lambda _, b=self: toggle_tablelines(b))
-    a.setShortcut(QKeySequence(gc("shortcut", "")))
-addHook("browser.setupMenus", onSetupMenus)
+    cut = gc("shortcut")
+    if cut:
+        a.setShortcut(QKeySequence())
+browser_menus_did_init.append(setupBrowserMenu)
