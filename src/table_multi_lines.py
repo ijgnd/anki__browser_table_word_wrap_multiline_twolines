@@ -22,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 
-from anki.hooks import addHook, wrap
+from anki.hooks import wrap
 
 from aqt.gui_hooks import (
     browser_menus_did_init,
@@ -34,7 +34,6 @@ from aqt.browser import (
     DataModel,
     StatusDelegate,
 )
-from anki.hooks import wrap
 from aqt.qt import (
     QKeySequence
 )
@@ -51,8 +50,8 @@ def gc(arg, fail=False):
         return fail
 
 
-#limit the lengh of what is shown in a table cell. Necessary 
-#if a field is really long. 
+#limit the lengh of what is shown in a table cell. Necessary
+#if a field is really long.
 def columnDataTruncate(self, index, _old):
     out = _old(self, index)
     if isinstance(out, str):
@@ -61,9 +60,19 @@ def columnDataTruncate(self, index, _old):
 DataModel.columnData = wrap(DataModel.columnData, columnDataTruncate, "around")
 
 
+height_was_adjusted_once = False
+old_row_height = None
 def mypaint(self, painter, option, index):
+    global height_was_adjusted_once
+    global old_row_height
+    if not height_was_adjusted_once:
+        old_row_height = self.browser.form.tableView.rowHeight(0)
     if table_multilines:
         self.browser.form.tableView.resizeRowToContents(index.row())
+        height_was_adjusted_once = True
+    else:
+        if height_was_adjusted_once and old_row_height:
+            self.browser.form.tableView.setRowHeight(index.row(), old_row_height)
 StatusDelegate.paint = wrap(StatusDelegate.paint, mypaint, "before")
 
 
@@ -72,23 +81,33 @@ def additionalInit(self):
     table_multilines = False
     if gc("on by default"):
         table_multilines = True
-    # revert https://github.com/ankitects/anki/commit/9ee82d55b11168b24f8c6b78efed735e2523bc66 
+    # revert https://github.com/ankitects/anki/commit/9ee82d55b11168b24f8c6b78efed735e2523bc66
     # from 2020-03-20
     self.form.tableView.setWordWrap(True)
 browser_will_show.append(additionalInit)
 
 
-def toggle_tablelines(browser):
+def toggle_tablelines(self):
+    # self is browser
     global table_multilines
+    if table_multilines:
+        self.form.tableView.setWordWrap(False)
+    else:
+        self.form.tableView.setWordWrap(True)
+    self.onSearchActivated()
     table_multilines ^= True
+
 
 
 def setupBrowserMenu(self):
     # self is browser
-    view = getMenu(self, "&View")
-    a = view.addAction('enable wordwrap in table (multi-line), close and reopen Browser to deactivate')
-    a.triggered.connect(lambda _, b=self: toggle_tablelines(b))
+    m = getMenu(self, "&View")
+    l = "enable wordwrap in table (multi-line)"
+    toggle_action = m.addAction(l)
+    toggle_action.setCheckable(True)
+    toggle_action.setChecked(gc("enable by default"))
+    toggle_action.toggled.connect(lambda _, b=self: toggle_tablelines(b))
     cut = gc("shortcut")
     if cut:
-        a.setShortcut(QKeySequence())
+        toggle_action.setShortcut(QKeySequence(cut))
 browser_menus_did_init.append(setupBrowserMenu)
